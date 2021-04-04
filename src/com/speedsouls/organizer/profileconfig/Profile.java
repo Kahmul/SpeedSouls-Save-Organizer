@@ -21,8 +21,8 @@ import com.speedsouls.organizer.savelist.RootFolder;
 public class Profile implements Comparable<Profile>
 {
 
-	private Game game;
-	private RootFolder root;
+	private final Game game;
+	private  RootFolder root;
 
 
 	/**
@@ -92,6 +92,16 @@ public class Profile implements Comparable<Profile>
 	{
 		game.removeProfile(this);
 		root.delete();
+	}
+
+	/**
+	 * Refresh the profile
+	 */
+	public void refresh() {
+		if (root != null) {
+			//force rebuilding of root folder to pick up new files
+			root = new RootFolder(new File(game.getDirectory() + File.separator + root.getName()));
+		}
 	}
 
 

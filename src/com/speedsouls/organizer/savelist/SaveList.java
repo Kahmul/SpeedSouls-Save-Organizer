@@ -1,13 +1,17 @@
 package com.speedsouls.organizer.savelist;
 
 
-import java.awt.Component;
-import java.awt.Point;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.ClipboardOwner;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 import javax.swing.BorderFactory;
@@ -86,7 +90,7 @@ public class SaveList extends JList<SaveListEntry> implements ListCellRenderer<S
 
 	/**
 	 * Fills the list with the given profile. If a search term is given, only saves/folders that contain the term will be added.
-	 * 
+	 *
 	 * @param profile the profile to fill this list with
 	 * @param searchTerm the search term
 	 */
@@ -136,16 +140,33 @@ public class SaveList extends JList<SaveListEntry> implements ListCellRenderer<S
 	{
 		try
 		{
-			OrganizerManager.refreshProfiles();
-			fillWith(OrganizerManager.getSelectedProfile(), null);
+			internalRefresh();
 		}
 		catch (Exception e)
 		{
-			JOptionPane.showMessageDialog(getParent(), "Error occured when trying to refresh from the file system.", "Error occured",
+			JOptionPane.showMessageDialog(getParent(), "Error occurred when trying to refresh from the file system.", "Error occurred",
 					JOptionPane.ERROR_MESSAGE);
 			return;
 		}
 		AbstractMessage.display(AbstractMessage.SUCCESSFUL_REFRESH);
+	}
+
+	public void silentRefresh(){
+		try
+		{
+			internalRefresh();
+		}
+		catch (Exception e)
+		{
+			JOptionPane.showMessageDialog(getParent(), "Error occurred when trying to refresh from the file system.", "Error occurred",
+					JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+	}
+
+	private void internalRefresh(){
+		OrganizerManager.refreshProfiles();
+		fillWith(OrganizerManager.getSelectedProfile(), null);
 	}
 
 
@@ -170,7 +191,7 @@ public class SaveList extends JList<SaveListEntry> implements ListCellRenderer<S
 	/**
 	 * Opens the entry if it is a folder and inserts its children below it in the list.
 	 * 
-	 * @param save the save to open
+	 * @param entry the save to open
 	 */
 	public void openDirectory(SaveListEntry entry)
 	{
@@ -200,7 +221,7 @@ public class SaveList extends JList<SaveListEntry> implements ListCellRenderer<S
 	/**
 	 * Closes the entry if it is a folder and removes its children displayed in the list.
 	 * 
-	 * @param save the save to close
+	 * @param entry the save to close
 	 */
 	public void closeDirectory(SaveListEntry entry)
 	{
@@ -418,6 +439,87 @@ public class SaveList extends JList<SaveListEntry> implements ListCellRenderer<S
 			new SaveListContextMenu(this, event.getX(), event.getY());
 	}
 
+	public void copyFiles(){
+
+		try {
+			Clipboard c = Toolkit.getDefaultToolkit().getSystemClipboard();
+			SaveListFileTransferable saveListFileTransferable = new SaveListFileTransferable(this);
+			if(!saveListFileTransferable.arrayList.isEmpty()) {
+				c.setContents(saveListFileTransferable, SaveListFileTransferable.clipboardOwner);
+				AbstractMessage.display(AbstractMessage.SUCCESSFUL_COPY);
+			}
+
+		} catch (Exception e){
+			JOptionPane.showMessageDialog(null, "Error when trying to copy items!", "Error occurred", JOptionPane.ERROR_MESSAGE);
+		}
+
+	}
+
+	public void askToPasteFiles() {
+		boolean areHotkeysEnabled = OrganizerManager.getKeyboardHook().areHotkeysEnabled();
+		OrganizerManager.getKeyboardHook().setHotkeysEnabled(false);
+		Folder dirToOpen;
+		try {
+			dirToOpen = getSelectedValue() instanceof Folder ? (Folder) getSelectedValue() : OrganizerManager.getSelectedProfile().getRoot();
+			Clipboard c = Toolkit.getDefaultToolkit().getSystemClipboard();
+			Transferable transferable = c.getContents(null);
+
+			ArrayList<File> fileList = (ArrayList<File>) transferable.getTransferData(DataFlavor.javaFileListFlavor);
+			if (!fileList.isEmpty() && wouldNotCauseInfiniteLoop(dirToOpen,fileList)) {
+				int confirm = JOptionPane.showConfirmDialog(getParent(),
+						"Paste " + fileList.size() + " file(s) into '"
+								+ dirToOpen.getName() + "' ?", "Paste Items", JOptionPane.YES_NO_OPTION);
+				if (confirm == 0) {
+					for (File file : fileList) {
+						OrganizerManager.copyFile(file, dirToOpen);
+
+					}
+					AbstractMessage.display(AbstractMessage.SUCCESSFUL_PASTE);
+					silentRefresh();
+					setSelectedValue(dirToOpen,true);
+					if(dirToOpen != OrganizerManager.getSelectedProfile().getRoot()){
+						openDirectory(dirToOpen); // not sure why this doesn't re-open the directory
+					}
+				}
+			}
+		} catch (Exception e) {
+			JOptionPane.showMessageDialog(null, "Error when trying to paste items!", "Error occurred", JOptionPane.ERROR_MESSAGE);
+		}
+		OrganizerManager.getKeyboardHook().setHotkeysEnabled(areHotkeysEnabled);
+	}
+
+
+	private boolean wouldNotCauseInfiniteLoop(Folder dirToOpen, ArrayList<File> fileList) {
+		for(File file: fileList){
+			if(isSourceAParentOfDest(dirToOpen,file)){
+				JOptionPane.showMessageDialog(null, "Cannot paste files into themselves! Please select a different folder to paste your files", "Error occurred", JOptionPane.ERROR_MESSAGE);
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * This method is used to be sure that the source is not a child of the destination.
+	 * This would cause an infinite loop with the current {@link OrganizerManager#copyDirectory(File, File)}
+	 * because the src would always have new files as they were copied over so it would never break out the loop
+	 * @param dest file trying to paste to
+	 * @param src file being pasted from
+	 * @return if source is a parent of the destination
+	 */
+	private boolean isSourceAParentOfDest(Folder dest, File src) {
+		boolean answer;
+		if (dest.getParent() != null) {
+			if (src.equals(dest.getFile())) {
+				return true;
+			}
+			answer = isSourceAParentOfDest(dest.getParent(),src);
+			return answer;
+		}
+		return false;
+
+	}
+
 
 	@Override
 	public Component getListCellRendererComponent(JList<? extends SaveListEntry> list, SaveListEntry entry, int index, boolean isSelected,
@@ -451,6 +553,7 @@ public class SaveList extends JList<SaveListEntry> implements ListCellRenderer<S
 	@Override
 	public void changedToProfile(Profile profile)
 	{
+		OrganizerManager.refreshProfiles();
 		if (profile.getRoot() != null)
 			profile.getRoot().sort();
 		fillWith(profile, null);
@@ -592,6 +695,12 @@ public class SaveList extends JList<SaveListEntry> implements ListCellRenderer<S
 	@Override
 	public void keyPressed(KeyEvent e)
 	{
+		if(e.getKeyCode() == KeyEvent.VK_C && e.getModifiersEx() == KeyEvent.CTRL_DOWN_MASK){
+			copyFiles();
+		}
+		else if(e.getKeyCode() == KeyEvent.VK_V && e.getModifiersEx() == KeyEvent.CTRL_DOWN_MASK){
+			askToPasteFiles();
+		}
 	}
 
 
@@ -602,12 +711,45 @@ public class SaveList extends JList<SaveListEntry> implements ListCellRenderer<S
 			askToEditEntry(getSelectedValue());
 		else if (e.getKeyCode() == KeyEvent.VK_DELETE)
 			askToDeleteEntries(getSelectedValuesList());
+		else if(e.getKeyCode() == KeyEvent.VK_COPY){
+			JOptionPane.showMessageDialog(this, "This folder already exists!", "Error occured", JOptionPane.ERROR_MESSAGE);
+		}
 	}
 
 
 	@Override
 	public void keyTyped(KeyEvent e)
 	{
+	}
+
+	private static class SaveListFileTransferable implements Transferable {
+
+		protected static final ClipboardOwner clipboardOwner = (clipboard, contents) -> {
+
+		};
+
+		private final ArrayList<File> arrayList = new ArrayList<>();
+
+		private SaveListFileTransferable(SaveList saveList) {
+			for(SaveListEntry saveListEntry :saveList.getSelectedValuesList()){
+				arrayList.add(saveListEntry.getFile());
+			}
+		}
+
+		@Override
+		public DataFlavor[] getTransferDataFlavors() {
+			return new DataFlavor[]{DataFlavor.javaFileListFlavor};
+		}
+
+		@Override
+		public boolean isDataFlavorSupported(DataFlavor flavor) {
+			return DataFlavor.javaFileListFlavor.equals(flavor);
+		}
+
+		@Override
+		public ArrayList<File> getTransferData(DataFlavor flavor) {
+			return arrayList;
+		}
 	}
 
 }

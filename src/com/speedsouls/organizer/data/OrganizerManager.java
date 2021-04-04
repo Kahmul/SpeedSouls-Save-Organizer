@@ -4,15 +4,11 @@ package com.speedsouls.organizer.data;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Image;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.Reader;
+import java.io.*;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
@@ -46,6 +42,8 @@ import jiconfont.icons.FontAwesome;
 import jiconfont.icons.Iconic;
 import jiconfont.icons.Typicons;
 import jiconfont.swing.IconFontSwing;
+
+import static com.speedsouls.organizer.messages.AbstractMessage.SUCCESSFUL_IMPORT;
 
 
 /**
@@ -261,6 +259,7 @@ public class OrganizerManager
 			prefs.remove(game.getAbbreviation() + PREFS_MODIFIER_GAME_DIR);
 			return;
 		}
+		//also sets profiles
 		game.setDirectory(gameDirectory);
 		String saveLocationPath = prefs.get(game.getAbbreviation() + PREFS_MODIFIER_GAME_SAVEFILE, PREFS_ERROR_ON_RETRIEVE);
 		if (!PREFS_ERROR_ON_RETRIEVE.equals(saveLocationPath))
@@ -360,6 +359,8 @@ public class OrganizerManager
 	public static void switchToProfile(Profile profile)
 	{
 		prefs.put(PREFS_KEY_SELECTED_PROFILE, profile.getName());
+		profile.refresh();
+
 		fireChangedToProfileEvent(profile);
 	}
 
@@ -473,7 +474,7 @@ public class OrganizerManager
 	 * @param parentFolder the folder to import the savefile into
 	 * @return the imported save
 	 */
-	public static Save importSavefile(Folder parentFolder)
+	public static Save importSaveFile(Folder parentFolder)
 	{
 		SaveListEntry parent = getSelectedEntry();
 		if (parent instanceof Save)
@@ -487,7 +488,7 @@ public class OrganizerManager
 			return null;
 		Save newSave = new Save((Folder) parent, saveFile);
 		parent.addChild(newSave);
-		AbstractMessage.display(AbstractMessage.SUCCESSFUL_IMPORT);
+		AbstractMessage.display(SUCCESSFUL_IMPORT);
 		fireEntryCreatedEvent(newSave);
 		return newSave;
 	}
@@ -498,7 +499,7 @@ public class OrganizerManager
 	 * 
 	 * @param saveToReplace the save to be replaced by the imported one
 	 */
-	public static void importAndReplaceSavefile(Save saveToReplace)
+	public static void importAndReplaceSaveFile(Save saveToReplace)
 	{
 		Folder parent = saveToReplace.getParent();
 		String name = saveToReplace.getName();
@@ -949,9 +950,9 @@ public class OrganizerManager
 
 
 	/**
-	 * Fires a gameFileWritableStateChanged event.
+	 * Fires a fireGameFileWritableStateChangedEvent event.
 	 * 
-	 * @param save the save that was loaded
+	 * @param writeable is this file writable
 	 */
 	public static void fireGameFileWritableStateChangedEvent(boolean writeable)
 	{
@@ -1139,7 +1140,7 @@ public class OrganizerManager
 	{
 		try (InputStream is = new URL(LATEST_RELEASE_JSON_URL).openStream())
 		{
-			BufferedReader rd = new BufferedReader(new InputStreamReader(is, Charset.forName("UTF-8")));
+			BufferedReader rd = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
 			String jsonText = readAll(rd);
 			JSONObject json = new JSONObject(jsonText);
 			return json;
@@ -1167,6 +1168,56 @@ public class OrganizerManager
 			sb.append((char) cp);
 		}
 		return sb.toString();
+	}
+
+	/**
+	 * when we copy a file we need to check if it exists.
+	 * If it does we will append a "(i)" to the file name with
+	 * i being the number of times that file has appeared in the directory
+	 * @param src
+	 * @param dest
+	 * @throws IOException
+	 */
+	public static void copyFile(File src,Folder dest) throws IOException {
+		int count = 1;
+		//create temp file to not lose contents of the source
+		File temp = src;
+		File destFile = dest.getFile();
+		String originalName = src.getAbsolutePath();
+		while (exists(temp, destFile) && count < 50) {
+			temp = new File(createNewFilePathString(originalName, count, temp.isDirectory()));
+			count++;
+
+		}
+		if (count >= 50) { //mainly this is to account for an edge case most likely this would never happen
+			JOptionPane.showMessageDialog(null, "One of the file(s) you are attempting to copy already exists too many times", "Error occurred", JOptionPane.WARNING_MESSAGE);
+			return;
+		}
+		if (src.isDirectory()) {
+			copyDirectory(src, new File(destFile.getPath() + File.separator + temp.getName()));
+
+		} else {
+			Files.copy(src.toPath(), new File(destFile.getPath() + File.separator + temp.getName()).toPath());
+			Save save = new Save(dest,new File(destFile.getPath() + File.separator + temp.getName()));
+			dest.addChild(save);
+			fireEntryCreatedEvent(save);
+		}
+	}
+
+	private static String createNewFilePathString(String s, int count,boolean isDirectory){
+		if(isDirectory){
+			return s + "("+count+")";
+		}
+		int i = s.lastIndexOf(".");
+		String[] a =  {s.substring(0, i), s.substring(i)};
+		return a[0]+"("+ count +")"+a[1];
+
+	}
+
+
+	private static boolean exists(File file1,File file2){
+		String path = file2.getPath() + File.separator + file1.getName();
+		return new File(path).exists();
 	}
 
 }

@@ -1,10 +1,11 @@
 package com.speedsouls.organizer.savelist;
 
 
-import java.awt.Color;
-import java.awt.Desktop;
-import java.awt.Point;
+import java.awt.*;
+import java.awt.datatransfer.*;
+import java.awt.event.KeyEvent;
 import java.io.File;
+import java.util.ArrayList;
 
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JMenuItem;
@@ -46,16 +47,20 @@ public class SaveListContextMenu extends JPopupMenu
 		super();
 
 		JMenuItem itemAdd = createAddItem(saveList);
+		JMenuItem paste = cretePasteItem(saveList);
 		JMenuItem itemRemove = createRemoveItem(saveList);
 		JMenuItem itemEdit = createEditItem(saveList);
 		JCheckBoxMenuItem itemReadOnly = createReadOnlyItem(saveList);
 		JMenuItem itemRefresh = createRefreshItem(saveList);
 		JMenuItem itemOpenInExplorer = createOpenInExplorerItem(saveList);
+		JMenuItem createCopy = createCopy(saveList);
 
 		add(itemAdd);
 		add(itemRemove);
 		add(itemEdit);
 		add(itemReadOnly);
+		add(paste);
+		add(createCopy);
 		add(itemRefresh);
 		add(itemOpenInExplorer);
 
@@ -72,6 +77,7 @@ public class SaveListContextMenu extends JPopupMenu
 			saveList.setSelectedIndex(index);
 			itemEdit.setEnabled(true);
 			itemRemove.setEnabled(true);
+			enablePaste(paste,saveList);
 			itemReadOnly.setEnabled(saveList.getSelectedValue() instanceof Save);
 			itemReadOnly.setSelected(!saveList.getSelectedValue().getFile().canWrite());
 			return;
@@ -79,8 +85,40 @@ public class SaveListContextMenu extends JPopupMenu
 		itemEdit.setEnabled(false);
 		itemRemove.setEnabled(false);
 		itemReadOnly.setEnabled(false);
+		createCopy.setEnabled(false);
+
+		enablePaste(paste,saveList);
 	}
 
+	private void enablePaste(JMenuItem paste,SaveList saveList) {
+		try {
+			ArrayList<File> fileList = (ArrayList<File>) Toolkit.getDefaultToolkit().getSystemClipboard().getData(DataFlavor.javaFileListFlavor);
+			paste.setEnabled((fileList != null && !fileList.isEmpty() && (saveList.getSelectedValue() == null || saveList.getSelectedValue() !=null &&  saveList.getSelectedValue() instanceof Folder)));
+		} catch (Exception e) {
+			paste.setEnabled(false);
+		}
+	}
+
+	private JMenuItem cretePasteItem(SaveList saveList) {
+		JMenuItem itemPaste = new JMenuItem("Paste Item(s)");
+		itemPaste.setIcon(IconFontSwing.buildIcon(Elusive.BRUSH, 15, new Color(39, 73, 174)));
+		itemPaste.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_V,KeyEvent.CTRL_DOWN_MASK));
+		itemPaste.addActionListener(event -> {
+			saveList.askToPasteFiles();
+		});
+
+		return itemPaste;
+	}
+
+	private JMenuItem createCopy(SaveList saveList) {
+		JMenuItem itemCopy = new JMenuItem("Copy");
+		itemCopy.setIcon(IconFontSwing.buildIcon(Elusive.PLUS_SIGN, 15, new Color(174, 172, 39)));
+		itemCopy.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_C,KeyEvent.CTRL_DOWN_MASK));
+		itemCopy.addActionListener(event -> {
+			saveList.copyFiles();
+		});
+		return itemCopy;
+	}
 
 	/**
 	 * Creates the 'Add Folder' item of the context menu.
